@@ -181,10 +181,24 @@ ssh -i your-key.pem ec2-user@<public-ip>
 
 ## 📦 Terraform状態管理
 
-- **Backend**: S3
-- **暗号化**: 有効
-- **バージョニング**: 有効
+- **Backend**: S3 (`terraform-state-bucket-dev-kentaindeed`)
+- **暗号化**: AES256で有効
+- **バージョニング**: 有効（状態ファイルの履歴管理）
+- **パブリックアクセス**: 完全ブロック
 - **状態ファイル**: `terraform.tfstate`
+- **リージョン**: `ap-northeast-1`
+
+### Backend設定
+```hcl
+terraform {
+  backend "s3" {
+    bucket = "terraform-state-bucket-dev-kentaindeed"
+    key    = "terraform.tfstate"
+    region = "ap-northeast-1"
+    encrypt = true
+  }
+}
+```
 
 ## 🧹 リソース削除
 
