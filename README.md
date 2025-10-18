@@ -216,11 +216,21 @@ terraform destroy
 1. **S3バケット名重複**
    - `main.tf`のバケット名を一意な名前に変更
 
-2. **権限エラー**
-   - AWS CLIの設定とIAM権限を確認
+2. **Backend設定変更エラー**
+   ```bash
+   # 状態ファイル移行
+   terraform init -migrate-state
+   ```
 
-3. **リージョン不一致**
+3. **権限エラー**
+   - AWS CLIの設定とIAM権限を確認
+   - EC2、ELB、S3の権限が必要
+
+4. **リージョン不一致**
    - `local.tf`と`terraform.tfvars`のリージョン設定を確認
+
+5. **モジュール変数エラー**
+   - 各モジュールの`variable.tf`で必要な変数が定義されているか確認
 
 ### ログ確認
 
@@ -228,6 +238,20 @@ terraform destroy
 # Terraform詳細ログ
 export TF_LOG=DEBUG
 terraform plan
+
+# 診断情報確認
+terraform validate
+terraform fmt -check
+```
+
+### ALB接続確認
+
+```bash
+# ALBのDNS名確認
+terraform output alb_dns_name
+
+# ヘルスチェック確認
+aws elbv2 describe-target-health --target-group-arn <target-group-arn>
 ```
 
 ## 🤝 貢献
@@ -246,6 +270,41 @@ MIT License
 - **Project**: terraform-project
 - **Environment**: dev
 
+## 🔄 モジュール構成
+
+### Network Module
+- VPC、サブネット、インターネットゲートウェイ
+- ALB用とEC2用のセキュリティグループ
+- ルートテーブルとアソシエーション
+
+### EC2 Module  
+- EC2インスタンス（複数AZに分散配置）
+- IAMロール（SSM用）
+- インスタンスプロファイル
+
+### ELB Module
+- Application Load Balancer
+- Target Group（将来の拡張用）
+- リスナー設定
+
+## 🌐 アクセス方法
+
+### Web アクセス
+```bash
+# ALBのDNS名でアクセス
+http://<alb-dns-name>
+https://<alb-dns-name>
+```
+
+### EC2 管理アクセス
+```bash
+# Session Manager経由（推奨）
+aws ssm start-session --target <instance-id>
+
+# SSH（必要に応じて）
+ssh -i your-key.pem ec2-user@<private-ip>
+```
+
 ---
 
-**注意**: このプロジェクトはKiro AIアシスタントの設定変更ポリシーに従って管理されています。設定変更は必ず承認を得てから実行してください。
+**注意**: このプロジェクトはKiro AIアシスタントの設定変更ポリシーに従って管理されています。Terraformファイルの変更は必ず承認を得てから実行してください。
