@@ -40,6 +40,26 @@ resource "aws_lb_target_group" "elb-tg" {
     port = 80
     protocol = "HTTP"
     vpc_id = var.vpc_id
+
+    # sticker session
+    stickiness {
+        type = "lb_cookie"
+        cookie_duration = 1800
+        enabled = true
+    }
+
+    #healthcheck 設定
+    health_check {
+        path = "/"
+        port = 80
+        protocol = "HTTP"
+        matcher = "200"
+        interval = 10
+        timeout = 5
+        healthy_threshold = 2
+        unhealthy_threshold = 2
+    }
+
     tags = {
         Name = "${local.name_prefix}-tg"
     }
