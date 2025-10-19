@@ -21,6 +21,7 @@ module "elb" {
     vpc_id = module.network.vpc_id
     subnet_ids = module.network.public_subnet_ids
     security_group_ids  = module.network.web_security_group_ids
+    alb_security_group_ids  = module.network.alb_security_group_ids
     # デフォルト値を使用（必要に応じて上書き可能）
 
     instance_ids = module.ec2.instance_ids

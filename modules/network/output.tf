@@ -16,3 +16,10 @@ output "web_security_group_ids" {
     aws_security_group.developers.id
   ]
 }
+
+output "alb_security_group_ids" {
+  description = "ALB security group ID"
+  value       = [
+    aws_security_group.alb-security.id
+  ]
+}

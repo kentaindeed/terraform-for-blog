@@ -9,6 +9,12 @@ variable "security_group_ids" {
   default     = []
 }
 
+variable "alb_security_group_ids" {
+  description = "List of security group IDs to attach to ALB"
+  type        = list(string)
+  default     = []
+}
+
 variable "vpc_id" {
   description = "VPC ID"
   type        = string

@@ -28,6 +28,7 @@ resource "aws_lb" "elb" {
     internal = false
     ip_address_type = "ipv4"
     subnets = var.subnet_ids
+    security_groups = var.alb_security_group_ids
 
     tags = {
         Name = "${local.name_prefix}-elb"

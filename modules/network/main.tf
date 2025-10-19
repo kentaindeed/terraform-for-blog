@@ -23,9 +23,26 @@ locals {
 # vpc 
 resource "aws_vpc" "main" {
     cidr_block = var.vpc_cidr_block
+
+    enable_dns_hostnames = true
+    enable_dns_support = true
     tags = merge(local.common_tags, {
         Name = "${local.name_prefix}-vpc"
     })
+}
+
+# vpc endpoint ssm agent
+resource "aws_vpc_endpoint" "ssmendpoint" {
+    vpc_id = aws_vpc.main.id
+    service_name = "com.amazonaws.ap-northeast-1.ssm"
+    vpc_endpoint_type = "Interface"
+    private_dns_enabled = true
+    security_group_ids = [aws_security_group.developers.id]
+    subnet_ids = aws_subnet.public.*.id
+
+    tags = merge(local.common_tags, {
+        Name = "${local.name_prefix}-ssm-endpoint"
+  })
 }
 
 # internet gateway
@@ -123,6 +140,17 @@ resource "aws_security_group_rule" "https_ingress" {
     description       = "HTTPS access"
 }
 
+# ssm HTTPS rule
+resource "aws_security_group_rule" "ssm_https_ingress" {
+    type              = "ingress"
+    from_port         = 443
+    to_port           = 443
+    protocol          = "tcp"
+    source_security_group_id = aws_security_group.ssm-security.id
+    security_group_id = aws_security_group.developers.id
+    description       = "HTTPS access"
+}
+
 # Egress rule
 resource "aws_security_group_rule" "all_egress" {
     type              = "egress"
@@ -174,5 +202,30 @@ resource "aws_security_group_rule" "https_ingress_alb" {
 }
 
 
+# vpc endpoint ssm agent セキュリティグループ
+resource "aws_security_group" "ssm-security" {
+    name        = "${local.name_prefix}-ssm-sg"
+    description = "Security group for VPC Endpoint SSM Agent"
+    vpc_id      = aws_vpc.main.id
+    
+    tags = merge(local.common_tags, {
+        Name = "${local.name_prefix}-ssm-sg"
+    })
+    
+    revoke_rules_on_delete = true
+    
+    lifecycle {
+        create_before_destroy = true
+    }
+}
 
 
+resource "aws_security_group_rule" "ssm-security" {
+    type              = "ingress"
+    from_port         = 443
+    to_port           = 443
+    protocol          = "tcp"
+    cidr_blocks       = [aws_vpc.main.cidr_block]
+    security_group_id = aws_security_group.ssm-security.id
+    description       = "HTTPS access"
+}
