@@ -29,6 +29,20 @@ module "elb" {
     ami = var.ami
 }
 
+#auto scaling
+module "autoscaling" {
+    source = "../../modules/autoscaling"
+    vpc_id = module.network.vpc_id
+    subnet_ids = module.network.public_subnet_ids
+    security_group_ids  = module.network.web_security_group_ids
+    # デフォルト値を使用（必要に応じて上書き可能）
+
+    ami = var.ami
+    instance_type = var.instance_type
+    instance_count = var.instance_count
+    elb-tg =  [module.elb.elb-tg]
+}
+
 
 # S3 bucket for Terraform state
 resource "aws_s3_bucket" "terraform_state" {
