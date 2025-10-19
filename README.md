@@ -10,8 +10,11 @@ AWS上にVPC、EC2インスタンス、Application Load Balancerを構築するT
 - **パブリックサブネット**: 2つのAZ（ap-northeast-1a, ap-northeast-1c）
 - **インターネットゲートウェイ**: 外部接続用
 - **Application Load Balancer (ALB)**: 高可用性ロードバランサー
+- **Auto Scaling Group**: 自動スケーリング機能
+- **Launch Template**: EC2インスタンス起動テンプレート
+- **Target Group**: ALBとEC2インスタンス間の負荷分散
 - **セキュリティグループ**: ALB経由のアクセス制御
-- **EC2インスタンス**: 開発用サーバー
+- **EC2インスタンス**: 開発用サーバー（Auto Scaling対応）
 - **S3バケット**: Terraform状態ファイル保存用（バージョニング有効）
 
 ## 🏗️ アーキテクチャ
@@ -32,13 +35,23 @@ AWS上にVPC、EC2インスタンス、Application Load Balancerを構築するT
 │  │         (Public Access)            │ │
 │  └─────────────────────────────────────┘ │
 │                     │                   │
+│  ┌─────────────────────────────────────┐ │
+│  │         Target Group               │ │
+│  │      (Health Check)                │ │
+│  └─────────────────────────────────────┘ │
+│                     │                   │
+│  ┌─────────────────────────────────────┐ │
+│  │       Auto Scaling Group           │ │
+│  │    (Min: 1, Max: 1, Desired: 1)    │ │
+│  └─────────────────────────────────────┘ │
+│                     │                   │
 │  ┌─────────────────┐ ┌─────────────────┐│
 │  │ Public Subnet   │ │ Public Subnet   ││
 │  │ 10.0.0.0/24     │ │ 10.0.1.0/24     ││
 │  │ ap-northeast-1a │ │ ap-northeast-1c ││
 │  │                 │ │                 ││
 │  │   [EC2]         │ │   [EC2]         ││
-│  │ (ALB経由のみ)    │ │ (ALB経由のみ)    ││
+│  │ (Auto Scaling)  │ │ (Auto Scaling)  ││
 │  └─────────────────┘ └─────────────────┘│
 └─────────────────────────────────────────┘
 ```
@@ -63,14 +76,18 @@ vpc-terraform/
     │   ├── main.tf            # VPC、サブネット、セキュリティグループ
     │   ├── variable.tf        # 変数定義
     │   └── output.tf          # 出力値
-    ├── ec2/                   # EC2モジュール
+    ├── ec2/                   # EC2モジュール（スタンドアロン用）
     │   ├── main.tf            # EC2インスタンス、IAMロール
     │   ├── variable.tf        # 変数定義
     │   └── output.tf          # インスタンスID、IP出力
-    └── elb/                   # ELBモジュール（新規追加）
-        ├── main.tf            # Application Load Balancer
+    ├── elb/                   # ELBモジュール
+    │   ├── main.tf            # Application Load Balancer
+    │   ├── variable.tf        # 変数定義
+    │   └── output.tf          # ALB情報出力
+    └── autoscaling/           # Auto Scalingモジュール（新規追加）
+        ├── main.tf            # Auto Scaling Group、Launch Template
         ├── variable.tf        # 変数定義
-        └── output.tf          # ALB情報出力
+        └── output.tf          # ASG情報出力
 ```
 
 ## 🚀 セットアップ手順
@@ -134,7 +151,17 @@ terraform apply
 |--------|------|-------------|-----|
 | `ami` | AMI ID | - | `ami-0228232d282f16465` |
 | `instance_type` | インスタンスタイプ | `t2.micro` | `t3.small` |
-| `instance_count` | インスタンス数 | `1` | `2` |
+| `instance_count` | インスタンス数（EC2モジュール用） | `1` | `2` |
+
+### Auto Scaling設定
+
+| 変数名 | 説明 | デフォルト値 | 例 |
+|--------|------|-------------|-----|
+| `min_size` | 最小インスタンス数 | `1` | `2` |
+| `max_size` | 最大インスタンス数 | `1` | `5` |
+| `desired_capacity` | 希望インスタンス数 | `1` | `3` |
+| `health_check_grace_period` | ヘルスチェック猶予期間（秒） | `30` | `300` |
+| `health_check_type` | ヘルスチェックタイプ | `EC2` | `ELB` |
 
 ### ネットワーク設定
 
@@ -276,16 +303,25 @@ MIT License
 - VPC、サブネット、インターネットゲートウェイ
 - ALB用とEC2用のセキュリティグループ
 - ルートテーブルとアソシエーション
+- VPC Endpoint（SSM用）
 
-### EC2 Module  
+### EC2 Module（スタンドアロン用）
 - EC2インスタンス（複数AZに分散配置）
 - IAMロール（SSM用）
 - インスタンスプロファイル
 
 ### ELB Module
 - Application Load Balancer
-- Target Group（将来の拡張用）
-- リスナー設定
+- Target Group（ヘルスチェック設定付き）
+- リスナー設定（HTTP/HTTPS）
+- Target Group Attachment
+
+### Auto Scaling Module（推奨）
+- Auto Scaling Group（自動スケーリング）
+- Launch Template（EC2起動設定）
+- Target Group連携
+- ヘルスチェック設定（EC2 + ELB）
+- 複数AZ対応
 
 ## 🌐 アクセス方法
 
@@ -308,3 +344,77 @@ ssh -i your-key.pem ec2-user@<private-ip>
 ---
 
 **注意**: このプロジェクトはKiro AIアシスタントの設定変更ポリシーに従って管理されています。Terraformファイルの変更は必ず承認を得てから実行してください。
+## 🔧 
+Auto Scaling設定
+
+### 基本設定
+- **最小インスタンス数**: 1
+- **最大インスタンス数**: 1  
+- **希望インスタンス数**: 1
+- **ヘルスチェック猶予期間**: 30秒
+- **ヘルスチェックタイプ**: EC2
+
+### Launch Template
+- **AMI**: 設定可能（デフォルト: Amazon Linux 2）
+- **インスタンスタイプ**: 設定可能（デフォルト: t2.micro）
+- **セキュリティグループ**: ALB経由のアクセスのみ許可
+- **VPC**: 複数AZに分散配置
+
+### スケーリングポリシー
+現在は手動スケーリングのみ対応。将来的にCloudWatchメトリクスベースの自動スケーリングを追加予定。
+
+## 🚨 重要な注意事項
+
+### モジュール選択
+- **Auto Scalingを使用する場合**: `autoscaling`モジュールのみを有効化
+- **スタンドアロンEC2を使用する場合**: `ec2`モジュールのみを有効化
+- **両方同時使用は非推奨**: リソースの重複や競合が発生する可能性
+
+### 現在の設定
+```hcl
+# env/dev/main.tf で以下のモジュールが有効
+module "network" { ... }      # ネットワーク基盤
+module "ec2" { ... }          # スタンドアロンEC2
+module "elb" { ... }          # Application Load Balancer  
+module "autoscaling" { ... }  # Auto Scaling Group
+```
+
+### 推奨構成
+本番環境では`autoscaling`モジュールの使用を推奨します：
+- 高可用性の確保
+- 自動復旧機能
+- 将来的なスケーリング対応
+
+## 🔍 ヘルスチェック
+
+### Target Group ヘルスチェック
+- **パス**: `/`
+- **ポート**: 80
+- **プロトコル**: HTTP
+- **正常レスポンス**: 200
+- **間隔**: 10秒
+- **タイムアウト**: 5秒
+- **正常閾値**: 2回
+- **異常閾値**: 2回
+
+### Auto Scaling ヘルスチェック
+- **タイプ**: EC2（インスタンスレベル）
+- **猶予期間**: 30秒
+- **Target Group連携**: 有効
+
+## 🔄 デプロイメント戦略
+
+### Blue-Green デプロイメント
+Launch Templateを更新してローリングアップデートが可能：
+
+```bash
+# Launch Templateの更新
+terraform apply
+
+# インスタンスの段階的更新
+aws autoscaling start-instance-refresh --auto-scaling-group-name <asg-name>
+```
+
+### ゼロダウンタイムデプロイ
+- Target Groupのヘルスチェックにより、新しいインスタンスが正常になってから古いインスタンスを削除
+- ALBが自動的にトラフィックを正常なインスタンスにルーティング
